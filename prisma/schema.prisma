@@ -1,0 +1,307 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. USER MANAGEMENT
+// ==========================================
+
+enum UserRole {
+  ADMIN
+  DIRECTOR
+  MANAGER
+  LOAN_OFFICER
+  TELLER
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  role      UserRole   @default(CUSTOMER)
+  status    UserStatus @default(ACTIVE)
+  avatar    String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  loanApplications       LoanApplication[]       @relation("applicant")
+  assignedLoans          LoanApplication[]       @relation("loanOfficer")
+  approvalActions        ApprovalWorkflow[]
+  disbursements          Disbursement[]
+  repaymentRecords       Repayment[]             @relation("collectedBy")
+
+  @@map("users")
+}
+
+// ==========================================
+// 3. LOAN PRODUCT CONFIGURATION
+// ==========================================
+
+enum LoanType {
+  PERSONAL
+  BUSINESS
+  AGRICULTURAL
+  GROUP_SOLIDARITY
+}
+
+enum InterestRateMethod {
+  FLAT_RATE
+  DECLINING_BALANCE
+}
+
+enum RepaymentFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum Currency {
+  USD
+  KHR
+}
+
+model LoanProduct {
+  id                 String             @id @default(uuid())
+  name               String
+  code               String             @unique
+  loanType           LoanType
+  description        String?            @db.Text
+  interestRateMethod InterestRateMethod
+  minInterestRate    Decimal            @db.Decimal(10, 4)
+  maxInterestRate    Decimal            @db.Decimal(10, 4)
+  minAmount          Decimal            @db.Decimal(18, 2)
+  maxAmount          Decimal            @db.Decimal(18, 2)
+  minTermMonths      Int
+  maxTermMonths      Int
+  currency           Currency           @default(USD)
+  gracePeriodDays    Int                @default(0)
+  penaltyRate        Decimal            @default(0) @db.Decimal(10, 4)
+  requiresCollateral Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  loanApplications LoanApplication[]
+
+  @@map("loan_products")
+}
+
+// ==========================================
+// 2. LOAN APPLICATION & APPROVAL
+// ==========================================
+
+enum LoanApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  OFFICER_APPROVED
+  MANAGER_APPROVED
+  DIRECTOR_APPROVED
+  APPROVED
+  REJECTED
+  DISBURSED
+  CLOSED
+}
+
+model LoanApplication {
+  id                  String                @id @default(uuid())
+  applicationNumber   String                @unique
+  applicantId         String
+  loanProductId       String
+  loanOfficerId       String?
+  requestedAmount     Decimal               @db.Decimal(18, 2)
+  approvedAmount      Decimal?              @db.Decimal(18, 2)
+  interestRate        Decimal               @db.Decimal(10, 4)
+  termMonths          Int
+  repaymentFrequency  RepaymentFrequency    @default(MONTHLY)
+  currency            Currency              @default(USD)
+  purpose             String?               @db.Text
+  status              LoanApplicationStatus @default(DRAFT)
+  gracePeriodDays     Int                   @default(0)
+  submittedAt         DateTime?
+  approvedAt          DateTime?
+  rejectedAt          DateTime?
+  rejectionReason     String?               @db.Text
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // Relations
+  applicant          User               @relation("applicant", fields: [applicantId], references: [id])
+  loanProduct        LoanProduct        @relation(fields: [loanProductId], references: [id])
+  loanOfficer        User?              @relation("loanOfficer", fields: [loanOfficerId], references: [id])
+  documents          Document[]
+  approvalWorkflows  ApprovalWorkflow[]
+  repaymentSchedules RepaymentSchedule[]
+  disbursements      Disbursement[]
+  repayments         Repayment[]
+
+  @@map("loan_applications")
+}
+
+model Document {
+  id                String   @id @default(uuid())
+  loanApplicationId String
+  fileName          String
+  originalName      String
+  filePath          String
+  fileSize          Int
+  mimeType          String
+  documentType      String   // ID, COLLATERAL, INCOME_PROOF, etc.
+  createdAt         DateTime @default(now())
+
+  // Relations
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum ApprovalLevel {
+  OFFICER
+  MANAGER
+  DIRECTOR
+}
+
+model ApprovalWorkflow {
+  id                String         @id @default(uuid())
+  loanApplicationId String
+  approverId        String
+  level             ApprovalLevel
+  action            ApprovalAction
+  comments          String?        @db.Text
+  createdAt         DateTime       @default(now())
+
+  // Relations
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  approver        User            @relation(fields: [approverId], references: [id])
+
+  @@map("approval_workflows")
+}
+
+// ==========================================
+// 4. REPAYMENT SCHEDULE
+// ==========================================
+
+enum ScheduleStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  WAIVED
+}
+
+model RepaymentSchedule {
+  id                String         @id @default(uuid())
+  loanApplicationId String
+  installmentNumber Int
+  dueDate           DateTime
+  principalAmount   Decimal        @db.Decimal(18, 2)
+  interestAmount    Decimal        @db.Decimal(18, 2)
+  totalAmount       Decimal        @db.Decimal(18, 2)
+  paidAmount        Decimal        @default(0) @db.Decimal(18, 2)
+  remainingAmount   Decimal        @db.Decimal(18, 2)
+  penaltyAmount     Decimal        @default(0) @db.Decimal(18, 2)
+  status            ScheduleStatus @default(PENDING)
+  paidAt            DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@unique([loanApplicationId, installmentNumber])
+  @@map("repayment_schedules")
+}
+
+// ==========================================
+// 5. DISBURSEMENT MANAGEMENT
+// ==========================================
+
+enum DisbursementMethod {
+  CASH
+  BANK_TRANSFER
+}
+
+enum DisbursementStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Disbursement {
+  id                String             @id @default(uuid())
+  loanApplicationId String
+  disbursedById     String
+  amount            Decimal            @db.Decimal(18, 2)
+  method            DisbursementMethod
+  bankName          String?
+  accountNumber     String?
+  referenceNumber   String?
+  status            DisbursementStatus @default(PENDING)
+  notes             String?            @db.Text
+  disbursedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  // Relations
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  disbursedBy     User            @relation(fields: [disbursedById], references: [id])
+
+  @@map("disbursements")
+}
+
+// ==========================================
+// 6. REPAYMENT & COLLECTION
+// ==========================================
+
+enum RepaymentType {
+  REGULAR
+  EARLY_REPAYMENT
+  PREPAYMENT
+  PENALTY
+}
+
+model Repayment {
+  id                String        @id @default(uuid())
+  loanApplicationId String
+  collectedById     String
+  amount            Decimal       @db.Decimal(18, 2)
+  principalPortion  Decimal       @db.Decimal(18, 2)
+  interestPortion   Decimal       @db.Decimal(18, 2)
+  penaltyPortion    Decimal       @default(0) @db.Decimal(18, 2)
+  repaymentType     RepaymentType @default(REGULAR)
+  paymentMethod     String        // CASH, BANK_TRANSFER
+  referenceNumber   String?
+  notes             String?       @db.Text
+  paidAt            DateTime      @default(now())
+  createdAt         DateTime      @default(now())
+
+  // Relations
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  collectedBy     User            @relation("collectedBy", fields: [collectedById], references: [id])
+
+  @@map("repayments")
+}
