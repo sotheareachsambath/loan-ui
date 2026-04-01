@@ -33,6 +33,3 @@ npm-debug.log*
 
 # Uploads
 /uploads
-
-# Prisma
-prisma.config.ts
