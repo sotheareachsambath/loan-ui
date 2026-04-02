@@ -70,7 +70,7 @@ A comprehensive loan management API built for Cambodian microfinance institution
     },
   });
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 Loan API is running on port: ${port}`);
   console.log(`📚 Swagger docs: /api/docs`);
 }
