@@ -6,6 +6,7 @@ import { LoanApplicationsModule } from './loan-applications/loan-applications.mo
 import { RepaymentSchedulesModule } from './repayment-schedules/repayment-schedules.module';
 import { DisbursementsModule } from './disbursements/disbursements.module';
 import { RepaymentsModule } from './repayments/repayments.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -17,5 +18,6 @@ import { RepaymentsModule } from './repayments/repayments.module';
     DisbursementsModule,
     RepaymentsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule { }
