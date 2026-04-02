@@ -8,7 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLoanApplicationDto } from './dto/create-loan-application.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { ApprovalActionDto } from './dto/approval-action.dto';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class LoanApplicationsService {

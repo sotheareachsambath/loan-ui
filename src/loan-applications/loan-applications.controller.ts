@@ -14,7 +14,7 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import {
     ApiTags,
     ApiOperation,
@@ -138,7 +138,7 @@ Actions: APPROVED, REJECTED, RETURNED`,
             storage: diskStorage({
                 destination: './uploads/documents',
                 filename: (req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+                    const uniqueName = `${randomUUID()}${extname(file.originalname)}`;
                     cb(null, uniqueName);
                 },
             }),
