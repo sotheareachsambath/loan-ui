@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const port = process.env.PORT || 8090;
 
   app.enableCors({
     origin: '*',
@@ -26,7 +27,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // Swagger Setup
-  const config = new DocumentBuilder()
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('Loan Management API')
     .setDescription(
       `## 🏦 Loan Management System API
@@ -45,11 +46,18 @@ A comprehensive loan management API built for Cambodian microfinance institution
 \`DRAFT → SUBMITTED → UNDER_REVIEW → OFFICER_APPROVED → MANAGER_APPROVED → APPROVED → DISBURSED → CLOSED\`
 `,
     )
-    .setVersion('1.0.0')
-    .addServer('http://localhost:8090', 'Local Development')
-    .build();
+    .setVersion('1.0.0');
 
-  const document = SwaggerModule.createDocument(app, config);
+  // Add server URLs based on environment
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    swaggerConfig.addServer(
+      `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`,
+      'Production',
+    );
+  }
+  swaggerConfig.addServer(`http://localhost:${port}`, 'Local Development');
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig.build());
   SwaggerModule.setup('api/docs', app, document, {
     customSiteTitle: 'Loan API — Swagger',
     customCss: `.swagger-ui .topbar { display: none }`,
@@ -62,8 +70,9 @@ A comprehensive loan management API built for Cambodian microfinance institution
     },
   });
 
-  await app.listen(8090);
-  console.log(`🚀 Loan API is running on: http://localhost:8090`);
-  console.log(`📚 Swagger docs: http://localhost:8090/api/docs`);
+  await app.listen(port);
+  console.log(`🚀 Loan API is running on port: ${port}`);
+  console.log(`📚 Swagger docs: /api/docs`);
 }
 bootstrap();
+
