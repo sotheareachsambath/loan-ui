@@ -33,3 +33,4 @@ npm-debug.log*
 
 # Uploads
 /uploads
+tsconfig.build.tsbuildinfo
