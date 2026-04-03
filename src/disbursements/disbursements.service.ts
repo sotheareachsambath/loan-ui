@@ -79,6 +79,30 @@ export class DisbursementsService {
         };
     }
 
+    async findAll() {
+        const disbursements = await this.prisma.disbursement.findMany({
+            include: {
+                disbursedBy: {
+                    select: { id: true, firstName: true, lastName: true },
+                },
+                loanApplication: {
+                    select: { id: true, applicationNumber: true, approvedAmount: true, currency: true },
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        const totalDisbursed = disbursements
+            .filter((d) => d.status === 'COMPLETED')
+            .reduce((sum, d) => sum + Number(d.amount), 0);
+
+        return {
+            disbursements,
+            totalDisbursed,
+            count: disbursements.length,
+        };
+    }
+
     async findByLoan(loanApplicationId: string) {
         const disbursements = await this.prisma.disbursement.findMany({
             where: { loanApplicationId },

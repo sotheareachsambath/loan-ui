@@ -30,6 +30,13 @@ Supports regular, early repayment, and prepayment types. Loan is automatically c
         return this.repaymentsService.create(dto);
     }
 
+    @Get()
+    @ApiOperation({ summary: 'Get all repayments', description: 'Returns all repayment records across all loans.' })
+    @ApiResponse({ status: 200, description: 'List of all repayment records.' })
+    findAll() {
+        return this.repaymentsService.findAll();
+    }
+
     @Get('loan/:loanApplicationId')
     @ApiOperation({ summary: 'Payment history for a loan', description: 'Returns all repayment records with collector details and total paid.' })
     @ApiParam({ name: 'loanApplicationId', description: 'Loan Application UUID' })

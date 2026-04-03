@@ -147,6 +147,29 @@ export class RepaymentsService {
         };
     }
 
+    // Get all repayments across all loans
+    async findAll() {
+        const repayments = await this.prisma.repayment.findMany({
+            include: {
+                collectedBy: {
+                    select: { id: true, firstName: true, lastName: true },
+                },
+                loanApplication: {
+                    select: { id: true, applicationNumber: true, status: true, currency: true },
+                },
+            },
+            orderBy: { paidAt: 'desc' },
+        });
+
+        const totalPaid = repayments.reduce((sum, r) => sum + Number(r.amount), 0);
+
+        return {
+            repayments,
+            totalPaid: Math.round(totalPaid * 100) / 100,
+            count: repayments.length,
+        };
+    }
+
     // Get repayment history for a loan
     async findByLoan(loanApplicationId: string) {
         const repayments = await this.prisma.repayment.findMany({

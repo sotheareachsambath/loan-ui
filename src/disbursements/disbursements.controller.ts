@@ -32,6 +32,13 @@ Bank transfer requires \`bankName\` and \`accountNumber\`.`,
         return this.disbursementsService.create(dto);
     }
 
+    @Get()
+    @ApiOperation({ summary: 'Get all disbursements', description: 'Returns all disbursements across all loans.' })
+    @ApiResponse({ status: 200, description: 'List of all disbursements.' })
+    findAll() {
+        return this.disbursementsService.findAll();
+    }
+
     @Get('loan/:loanApplicationId')
     @ApiOperation({ summary: 'Get disbursements by loan', description: 'Returns all disbursements for a loan with total disbursed amount.' })
     @ApiParam({ name: 'loanApplicationId', description: 'Loan Application UUID' })
