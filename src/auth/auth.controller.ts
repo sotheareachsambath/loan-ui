@@ -9,6 +9,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -47,6 +48,37 @@ export class AuthController {
     @ApiResponse({ status: 401, description: 'Invalid email or password / Account not active.' })
     async login(@Body() loginDto: LoginDto) {
         return this.authService.login(loginDto);
+    }
+
+    @Public()
+    @Post('register')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({
+        summary: 'Register a new account',
+        description: 'Create a new customer account. Returns a JWT access token and user profile data.',
+    })
+    @ApiResponse({
+        status: 201,
+        description: 'Registration successful. Returns access token and user data.',
+        schema: {
+            example: {
+                accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+                user: {
+                    id: 'uuid',
+                    email: 'john@example.com',
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    role: 'CUSTOMER',
+                    status: 'ACTIVE',
+                    createdAt: '2026-04-03T00:00:00.000Z',
+                    updatedAt: '2026-04-03T00:00:00.000Z',
+                },
+            },
+        },
+    })
+    @ApiResponse({ status: 409, description: 'Email already exists.' })
+    async register(@Body() registerDto: RegisterDto) {
+        return this.authService.register(registerDto);
     }
 
     @Get('me')
