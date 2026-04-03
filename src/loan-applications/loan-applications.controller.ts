@@ -22,6 +22,8 @@ import {
     ApiParam,
     ApiConsumes,
     ApiBody,
+    ApiResponse,
+    ApiBearerAuth,
 } from '@nestjs/swagger';
 import { LoanApplicationsService } from './loan-applications.service';
 import { CreateLoanApplicationDto } from './dto/create-loan-application.dto';
@@ -29,6 +31,7 @@ import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { ApprovalActionDto } from './dto/approval-action.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
+@ApiBearerAuth()
 @ApiTags('Loan Applications')
 @Controller('loan-applications')
 export class LoanApplicationsController {
@@ -39,6 +42,9 @@ export class LoanApplicationsController {
 
     @Post()
     @ApiOperation({ summary: 'Create loan application', description: 'Submit a new loan request. Validates against loan product limits (amount, term, rate).' })
+    @ApiResponse({ status: 201, description: 'Loan application created successfully.' })
+    @ApiResponse({ status: 400, description: 'Validation error — amount/term/rate outside product limits.' })
+    @ApiResponse({ status: 404, description: 'Applicant or loan product not found.' })
     create(@Body() dto: CreateLoanApplicationDto) {
         return this.loanApplicationsService.create(dto);
     }
@@ -50,6 +56,7 @@ export class LoanApplicationsController {
     @ApiQuery({ name: 'applicantId', required: false })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'limit', required: false, type: Number })
+    @ApiResponse({ status: 200, description: 'Paginated list of loan applications.' })
     findAll(
         @Query('status') status?: string,
         @Query('loanOfficerId') loanOfficerId?: string,
@@ -69,6 +76,8 @@ export class LoanApplicationsController {
     @Get(':id')
     @ApiOperation({ summary: 'Get loan application details', description: 'Returns full application with applicant, product, officer, documents, approval history, schedules, disbursements, and repayments.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'Full loan application details with all relations.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     findOne(@Param('id') id: string) {
         return this.loanApplicationsService.findOne(id);
     }
@@ -76,6 +85,9 @@ export class LoanApplicationsController {
     @Patch(':id')
     @ApiOperation({ summary: 'Update loan application', description: 'Only DRAFT or SUBMITTED applications can be updated.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'Loan application updated successfully.' })
+    @ApiResponse({ status: 400, description: 'Cannot update — application is not in DRAFT or SUBMITTED status.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     update(@Param('id') id: string, @Body() dto: UpdateLoanApplicationDto) {
         return this.loanApplicationsService.update(id, dto);
     }
@@ -83,6 +95,9 @@ export class LoanApplicationsController {
     @Post(':id/submit')
     @ApiOperation({ summary: 'Submit application for review', description: 'Changes status from DRAFT → SUBMITTED.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'Application submitted successfully.' })
+    @ApiResponse({ status: 400, description: 'Application is not in DRAFT status.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     submit(@Param('id') id: string) {
         return this.loanApplicationsService.submit(id);
     }
@@ -91,6 +106,9 @@ export class LoanApplicationsController {
     @ApiOperation({ summary: 'Assign loan officer', description: 'Assign a LOAN_OFFICER to review the application. Changes status to UNDER_REVIEW.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiBody({ schema: { type: 'object', properties: { loanOfficerId: { type: 'string', description: 'UUID of the loan officer' } }, required: ['loanOfficerId'] } })
+    @ApiResponse({ status: 200, description: 'Loan officer assigned successfully.' })
+    @ApiResponse({ status: 400, description: 'Application is not in SUBMITTED status or user is not a LOAN_OFFICER.' })
+    @ApiResponse({ status: 404, description: 'Loan application or officer not found.' })
     assignOfficer(
         @Param('id') id: string,
         @Body('loanOfficerId') loanOfficerId: string,
@@ -103,12 +121,15 @@ export class LoanApplicationsController {
         summary: 'Process approval action',
         description: `Multi-level approval workflow:
 - **OFFICER** level: UNDER_REVIEW → OFFICER_APPROVED
-- **MANAGER** level: OFFICER_APPROVED → MANAGER_APPROVED  
+- **MANAGER** level: OFFICER_APPROVED → MANAGER_APPROVED
 - **DIRECTOR** level: MANAGER_APPROVED → APPROVED
 
 Actions: APPROVED, REJECTED, RETURNED`,
     })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'Approval action processed successfully.' })
+    @ApiResponse({ status: 400, description: 'Invalid approval level for current status, or invalid action.' })
+    @ApiResponse({ status: 404, description: 'Loan application or approver not found.' })
     processApproval(@Param('id') id: string, @Body() dto: ApprovalActionDto) {
         return this.loanApplicationsService.processApproval(id, dto);
     }
@@ -116,6 +137,8 @@ Actions: APPROVED, REJECTED, RETURNED`,
     @Get(':id/approval-history')
     @ApiOperation({ summary: 'Get approval history', description: 'Returns all approval actions with approver details, ordered chronologically.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'List of approval workflow records.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     getApprovalHistory(@Param('id') id: string) {
         return this.loanApplicationsService.getApprovalHistory(id);
     }
@@ -133,6 +156,9 @@ Actions: APPROVED, REJECTED, RETURNED`,
             },
         },
     })
+    @ApiResponse({ status: 201, description: 'Documents uploaded successfully.' })
+    @ApiResponse({ status: 400, description: 'No files uploaded or invalid file type.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     @UseInterceptors(
         FilesInterceptor('files', 10, {
             storage: diskStorage({
@@ -193,6 +219,7 @@ Actions: APPROVED, REJECTED, RETURNED`,
     @Get(':id/documents')
     @ApiOperation({ summary: 'List documents', description: 'Get all uploaded documents for a loan application.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'List of documents for the loan application.' })
     async getDocuments(@Param('id') id: string) {
         return this.prisma.document.findMany({
             where: { loanApplicationId: id },
@@ -204,6 +231,8 @@ Actions: APPROVED, REJECTED, RETURNED`,
     @ApiOperation({ summary: 'Delete a document' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiParam({ name: 'documentId', description: 'Document UUID' })
+    @ApiResponse({ status: 200, description: 'Document deleted successfully.' })
+    @ApiResponse({ status: 404, description: 'Document not found.' })
     async deleteDocument(
         @Param('id') id: string,
         @Param('documentId') documentId: string,
@@ -215,6 +244,9 @@ Actions: APPROVED, REJECTED, RETURNED`,
     @Delete(':id')
     @ApiOperation({ summary: 'Delete loan application', description: 'Only DRAFT applications can be deleted.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'Loan application deleted successfully.' })
+    @ApiResponse({ status: 400, description: 'Cannot delete — application is not in DRAFT status.' })
+    @ApiResponse({ status: 404, description: 'Loan application not found.' })
     remove(@Param('id') id: string) {
         return this.loanApplicationsService.remove(id);
     }

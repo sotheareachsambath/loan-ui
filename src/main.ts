@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -35,6 +36,7 @@ async function bootstrap() {
 A comprehensive loan management API built for Cambodian microfinance institutions.
 
 ### Modules
+- **Authentication** — JWT login, token-based route protection, profile endpoint
 - **User Management** — CRUD with role-based access (Admin, Director, Manager, Loan Officer, Teller, Customer)
 - **Loan Products** — Configure loan types, interest rates (flat/declining), terms, and currencies (USD/KHR)
 - **Loan Applications** — Submit requests, upload documents, multi-level approval workflow
@@ -42,11 +44,16 @@ A comprehensive loan management API built for Cambodian microfinance institution
 - **Disbursements** — Cash or bank transfer with partial disbursement support
 - **Repayments & Collection** — Record payments, early repayment, PAR 30/60/90 overdue tracking
 
+### Authentication
+All endpoints require a valid JWT Bearer token unless marked as public.
+Use \`POST /api/auth/login\` to obtain a token.
+
 ### Approval Workflow
 \`DRAFT → SUBMITTED → UNDER_REVIEW → OFFICER_APPROVED → MANAGER_APPROVED → APPROVED → DISBURSED → CLOSED\`
 `,
     )
-    .setVersion('1.0.0');
+    .setVersion('1.0.0')
+    .addBearerAuth();
 
   // Add server URLs based on environment
   if (process.env.RAILWAY_PUBLIC_DOMAIN) {
