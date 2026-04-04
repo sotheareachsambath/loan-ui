@@ -109,9 +109,7 @@ export class LoanApplicationsService {
                     applicant: {
                         select: { id: true, firstName: true, lastName: true, email: true },
                     },
-                    loanProduct: {
-                        select: { id: true, name: true, code: true, loanType: true },
-                    },
+                    loanProduct: true,
                     loanOfficer: {
                         select: { id: true, firstName: true, lastName: true },
                     },

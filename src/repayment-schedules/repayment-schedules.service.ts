@@ -32,6 +32,21 @@ export class RepaymentSchedulesService {
             throw new BadRequestException('Loan must be APPROVED or DISBURSED to generate schedule');
         }
 
+        // Non-fixed-term loans don't have repayment schedules
+        if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
+            return {
+                loanApplicationId,
+                method,
+                hasFixedTerm: false,
+                message: 'This loan product does not have a fixed term. No repayment schedule is required.',
+                totalInstallments: 0,
+                totalPrincipal: 0,
+                totalInterest: 0,
+                totalAmount: 0,
+                schedules: [],
+            };
+        }
+
         // Delete existing schedule
         await this.prisma.repaymentSchedule.deleteMany({
             where: { loanApplicationId },
@@ -43,10 +58,6 @@ export class RepaymentSchedulesService {
         const gracePeriodDays = loan.gracePeriodDays;
         const frequency = loan.repaymentFrequency;
         const interestMethod = loan.loanProduct.interestRateMethod;
-
-        if (!termMonths) {
-            throw new BadRequestException('Cannot generate schedule for a loan without a fixed term');
-        }
 
         // Calculate number of installments based on frequency
         let totalInstallments: number;
@@ -261,13 +272,47 @@ export class RepaymentSchedulesService {
 
     // Get schedule for a loan
     async findByLoan(loanApplicationId: string) {
+        const loan = await this.prisma.loanApplication.findUnique({
+            where: { id: loanApplicationId },
+            include: { loanProduct: true },
+        });
+
+        if (!loan) {
+            throw new NotFoundException('Loan application not found');
+        }
+
+        // Non-fixed-term loans don't have repayment schedules
+        if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
+            return {
+                loanApplicationId,
+                hasFixedTerm: false,
+                message: 'This loan product does not have a fixed term. No repayment schedule is required.',
+                totalInstallments: 0,
+                totalPrincipal: 0,
+                totalInterest: 0,
+                totalAmount: 0,
+                totalPaid: 0,
+                totalRemaining: 0,
+                schedules: [],
+            };
+        }
+
         const schedules = await this.prisma.repaymentSchedule.findMany({
             where: { loanApplicationId },
             orderBy: { installmentNumber: 'asc' },
         });
 
         if (schedules.length === 0) {
-            throw new NotFoundException('No repayment schedule found for this loan');
+            return {
+                loanApplicationId,
+                totalInstallments: 0,
+                totalPrincipal: 0,
+                totalInterest: 0,
+                totalAmount: 0,
+                totalPaid: 0,
+                totalRemaining: 0,
+                schedules: [],
+            };
         }
 
         const totalPrincipal = schedules.reduce((sum, s) => sum + Number(s.principalAmount), 0);
