@@ -44,6 +44,10 @@ export class RepaymentSchedulesService {
         const frequency = loan.repaymentFrequency;
         const interestMethod = loan.loanProduct.interestRateMethod;
 
+        if (!termMonths) {
+            throw new BadRequestException('Cannot generate schedule for a loan without a fixed term');
+        }
+
         // Calculate number of installments based on frequency
         let totalInstallments: number;
         let intervalDays: number;
