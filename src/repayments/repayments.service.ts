@@ -20,6 +20,7 @@ export class RepaymentsService {
         const loan = await this.prisma.loanApplication.findUnique({
             where: { id: dto.loanApplicationId },
             include: {
+                loanProduct: true,
                 repaymentSchedules: {
                     where: { status: { in: ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'] } },
                     orderBy: { installmentNumber: 'asc' },
@@ -33,6 +34,36 @@ export class RepaymentsService {
 
         if (loan.status !== 'DISBURSED') {
             throw new BadRequestException('Loan must be DISBURSED to accept payments');
+        }
+
+        // Non-fixed-term loans: record repayment directly without schedule allocation
+        if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
+            const repayment = await this.prisma.repayment.create({
+                data: {
+                    loanApplicationId: dto.loanApplicationId,
+                    collectedById: dto.collectedById,
+                    amount: dto.amount,
+                    principalPortion: dto.amount,
+                    interestPortion: 0,
+                    penaltyPortion: 0,
+                    repaymentType: (dto.repaymentType || 'REGULAR') as any,
+                    paymentMethod: dto.paymentMethod,
+                    referenceNumber: dto.referenceNumber,
+                    notes: dto.notes,
+                },
+            });
+
+            return {
+                repayment,
+                allocation: {
+                    principalPaid: dto.amount,
+                    interestPaid: 0,
+                    penaltyPaid: 0,
+                    totalPaid: dto.amount,
+                    schedulesAffected: 0,
+                    hasFixedTerm: false,
+                },
+            };
         }
 
         if (loan.repaymentSchedules.length === 0) {
