@@ -130,7 +130,7 @@ model LoanApplication {
   requestedAmount     Decimal               @db.Decimal(18, 2)
   approvedAmount      Decimal?              @db.Decimal(18, 2)
   interestRate        Decimal               @db.Decimal(10, 4)
-  termMonths          Int
+  termMonths          Int?
   repaymentFrequency  RepaymentFrequency    @default(MONTHLY)
   currency            Currency              @default(USD)
   purpose             String?               @db.Text
