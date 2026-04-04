@@ -38,23 +38,58 @@ export class RepaymentsService {
 
         // Non-fixed-term loans: record repayment directly without schedule allocation
         if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
-            const repayment = await this.prisma.repayment.create({
-                data: {
-                    loanApplicationId: dto.loanApplicationId,
-                    collectedById: dto.collectedById,
-                    amount: dto.amount,
-                    principalPortion: dto.amount,
-                    interestPortion: 0,
-                    penaltyPortion: 0,
-                    repaymentType: (dto.repaymentType || 'REGULAR') as any,
-                    paymentMethod: dto.paymentMethod,
-                    referenceNumber: dto.referenceNumber,
-                    notes: dto.notes,
-                },
+            const loanAmount = Number(loan.approvedAmount || loan.requestedAmount);
+
+            // Get total already paid
+            const previousRepayments = await this.prisma.repayment.aggregate({
+                where: { loanApplicationId: dto.loanApplicationId },
+                _sum: { amount: true },
+            });
+            const totalPreviouslyPaid = Number(previousRepayments._sum.amount || 0);
+            const outstandingBalance = Math.round((loanAmount - totalPreviouslyPaid) * 100) / 100;
+
+            if (outstandingBalance <= 0) {
+                throw new BadRequestException('This loan is already fully paid');
+            }
+
+            if (dto.amount > outstandingBalance) {
+                throw new BadRequestException(
+                    `Payment amount (${dto.amount}) exceeds outstanding balance (${outstandingBalance})`,
+                );
+            }
+
+            const newTotalPaid = totalPreviouslyPaid + dto.amount;
+            const isFullyPaid = Math.round((loanAmount - newTotalPaid) * 100) / 100 <= 0;
+
+            const result = await this.prisma.$transaction(async (tx) => {
+                const repayment = await tx.repayment.create({
+                    data: {
+                        loanApplicationId: dto.loanApplicationId,
+                        collectedById: dto.collectedById,
+                        amount: dto.amount,
+                        principalPortion: dto.amount,
+                        interestPortion: 0,
+                        penaltyPortion: 0,
+                        repaymentType: (dto.repaymentType || 'REGULAR') as any,
+                        paymentMethod: dto.paymentMethod,
+                        referenceNumber: dto.referenceNumber,
+                        notes: dto.notes,
+                    },
+                });
+
+                // Close the loan if fully paid
+                if (isFullyPaid) {
+                    await tx.loanApplication.update({
+                        where: { id: dto.loanApplicationId },
+                        data: { status: 'CLOSED' },
+                    });
+                }
+
+                return repayment;
             });
 
             return {
-                repayment,
+                repayment: result,
                 allocation: {
                     principalPaid: dto.amount,
                     interestPaid: 0,
@@ -62,6 +97,10 @@ export class RepaymentsService {
                     totalPaid: dto.amount,
                     schedulesAffected: 0,
                     hasFixedTerm: false,
+                    loanAmount,
+                    totalRepaid: Math.round(newTotalPaid * 100) / 100,
+                    outstandingBalance: Math.round((loanAmount - newTotalPaid) * 100) / 100,
+                    loanClosed: isFullyPaid,
                 },
             };
         }
