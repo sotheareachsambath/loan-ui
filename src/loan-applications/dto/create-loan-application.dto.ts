@@ -41,9 +41,9 @@ export class CreateLoanApplicationDto {
     interestRate: number;
 
     @ApiPropertyOptional({ example: 12, description: 'Loan term in months (required for fixed-term products)' })
-    @IsNumber()
     @IsOptional()
-    @Min(1)
+    @IsNumber()
+    @Min(0)
     termMonths?: number;
 
     @ApiPropertyOptional({ enum: RepaymentFrequency, default: 'MONTHLY' })
