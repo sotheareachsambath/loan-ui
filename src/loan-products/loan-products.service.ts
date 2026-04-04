@@ -24,8 +24,14 @@ export class LoanProductsService {
             throw new ConflictException('minAmount cannot be greater than maxAmount');
         }
 
-        if (dto.minTermMonths > dto.maxTermMonths) {
-            throw new ConflictException('minTermMonths cannot be greater than maxTermMonths');
+        const hasFixedTerm = dto.hasFixedTerm !== false; // default true
+        if (hasFixedTerm) {
+            if (dto.minTermMonths == null || dto.maxTermMonths == null) {
+                throw new ConflictException('minTermMonths and maxTermMonths are required when hasFixedTerm is true');
+            }
+            if (dto.minTermMonths > dto.maxTermMonths) {
+                throw new ConflictException('minTermMonths cannot be greater than maxTermMonths');
+            }
         }
 
         if (dto.minInterestRate > dto.maxInterestRate) {

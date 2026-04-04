@@ -87,8 +87,9 @@ model LoanProduct {
   maxInterestRate    Decimal            @db.Decimal(10, 4)
   minAmount          Decimal            @db.Decimal(18, 2)
   maxAmount          Decimal            @db.Decimal(18, 2)
-  minTermMonths      Int
-  maxTermMonths      Int
+  hasFixedTerm       Boolean            @default(true)
+  minTermMonths      Int?
+  maxTermMonths      Int?
   currency           Currency           @default(USD)
   gracePeriodDays    Int                @default(0)
   penaltyRate        Decimal            @default(0) @db.Decimal(10, 4)

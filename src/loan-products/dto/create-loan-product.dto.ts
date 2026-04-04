@@ -70,15 +70,22 @@ export class CreateLoanProductDto {
     @Min(0)
     maxAmount: number;
 
-    @ApiProperty({ example: 1, description: 'Minimum term in months' })
-    @IsNumber()
-    @Min(1)
-    minTermMonths: number;
+    @ApiPropertyOptional({ default: true, description: 'If true, loan has a fixed term with min/max months. If false, loan is open-ended (repay until fully paid).' })
+    @IsBoolean()
+    @IsOptional()
+    hasFixedTerm?: boolean;
 
-    @ApiProperty({ example: 36, description: 'Maximum term in months' })
+    @ApiPropertyOptional({ example: 1, description: 'Minimum term in months (required when hasFixedTerm is true)' })
     @IsNumber()
+    @IsOptional()
     @Min(1)
-    maxTermMonths: number;
+    minTermMonths?: number;
+
+    @ApiPropertyOptional({ example: 36, description: 'Maximum term in months (required when hasFixedTerm is true)' })
+    @IsNumber()
+    @IsOptional()
+    @Min(1)
+    maxTermMonths?: number;
 
     @ApiPropertyOptional({ enum: Currency, default: 'USD' })
     @IsEnum(Currency)

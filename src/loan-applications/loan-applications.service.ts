@@ -50,11 +50,14 @@ export class LoanApplicationsService {
             );
         }
 
-        // Validate term within product limits
-        if (dto.termMonths < product.minTermMonths || dto.termMonths > product.maxTermMonths) {
-            throw new BadRequestException(
-                `Loan term must be between ${product.minTermMonths} and ${product.maxTermMonths} months`,
-            );
+        // Validate term within product limits (only for fixed-term products)
+        //@ts-ignore
+        if (product.hasFixedTerm) {
+            if (!dto.termMonths || (product.minTermMonths !== null && dto.termMonths < product.minTermMonths) || (product.maxTermMonths !== null && dto.termMonths > product.maxTermMonths)) {
+                throw new BadRequestException(
+                    `Loan term must be between ${product.minTermMonths} and ${product.maxTermMonths} months`,
+                );
+            }
         }
 
         // Validate interest rate within product limits
