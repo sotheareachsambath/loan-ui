@@ -19,19 +19,25 @@ export class AssetsService {
         folder: string = 'general',
         uploadedById?: string,
     ) {
+        const normalizedUploadedById = await this.normalizeUploadedById(uploadedById);
         const { key, url } = await this.s3.upload(file, folder);
-        // console.log('Uploaded file to S3:', { key, url });
-        return this.prisma.asset.create({
-            data: {
-                fileName: file.originalname,
-                key,
-                url,
-                mimeType: file.mimetype,
-                fileSize: file.size,
-                folder,
-                uploadedById,
-            },
-        });
+
+        try {
+            return await this.prisma.asset.create({
+                data: {
+                    fileName: file.originalname,
+                    key,
+                    url,
+                    mimeType: file.mimetype,
+                    fileSize: file.size,
+                    folder,
+                    uploadedById: normalizedUploadedById,
+                },
+            });
+        } catch (error) {
+            await this.s3.delete(key).catch(() => undefined);
+            throw error;
+        }
     }
 
     async uploadMany(
@@ -145,5 +151,24 @@ export class AssetsService {
         await this.prisma.asset.delete({ where: { id } });
 
         return { message: 'Asset deleted successfully' };
+    }
+
+    private async normalizeUploadedById(uploadedById?: string) {
+        const normalizedUploadedById = uploadedById?.trim() || undefined;
+
+        if (!normalizedUploadedById) {
+            return undefined;
+        }
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: normalizedUploadedById },
+            select: { id: true },
+        });
+
+        if (!user) {
+            throw new BadRequestException('uploadedById does not match an existing user');
+        }
+
+        return normalizedUploadedById;
     }
 }

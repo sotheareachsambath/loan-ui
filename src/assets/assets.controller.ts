@@ -25,6 +25,7 @@ import {
     ApiResponse,
     ApiBearerAuth,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AssetsService } from './assets.service';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 
@@ -67,7 +68,6 @@ export class AssetsController {
             properties: {
                 file: { type: 'string', format: 'binary' },
                 folder: { type: 'string', example: 'documents', description: 'Folder name (default: general)' },
-                uploadedById: { type: 'string', description: 'UUID of the uploader (optional)' },
             },
         },
     })
@@ -77,12 +77,12 @@ export class AssetsController {
     async upload(
         @UploadedFile() file: Express.Multer.File,
         @Body('folder') folder?: string,
-        @Body('uploadedById') uploadedById?: string,
+        @CurrentUser('id') currentUserId?: string,
     ) {
         if (!file) {
             throw new BadRequestException('No file provided');
         }
-        return this.assetsService.upload(file, folder || 'general', uploadedById);
+        return this.assetsService.upload(file, folder || 'general', currentUserId);
     }
 
     @Post('upload-multiple')
@@ -94,7 +94,6 @@ export class AssetsController {
             properties: {
                 files: { type: 'array', items: { type: 'string', format: 'binary' } },
                 folder: { type: 'string', example: 'documents' },
-                uploadedById: { type: 'string' },
             },
         },
     })
@@ -103,12 +102,12 @@ export class AssetsController {
     async uploadMultiple(
         @UploadedFiles() files: Express.Multer.File[],
         @Body('folder') folder?: string,
-        @Body('uploadedById') uploadedById?: string,
+        @CurrentUser('id') currentUserId?: string,
     ) {
         if (!files || files.length === 0) {
             throw new BadRequestException('No files provided');
         }
-        return this.assetsService.uploadMany(files, folder || 'general', uploadedById);
+        return this.assetsService.uploadMany(files, folder || 'general', currentUserId);
     }
 
     @Get()
