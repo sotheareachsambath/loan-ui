@@ -3,6 +3,7 @@ import {
     NotFoundException,
     ConflictException,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -22,16 +23,30 @@ export class UsersService {
         }
 
         const hashedPassword = await bcrypt.hash(dto.password, 10);
+        const roles = dto.roles && dto.roles.length > 0 ? dto.roles : ['CUSTOMER' as const];
 
         const user = await this.prisma.user.create({
             data: {
-                ...dto,
+                email: dto.email,
                 password: hashedPassword,
+                firstName: dto.firstName,
+                lastName: dto.lastName,
+                phone: dto.phone,
+                avatar: dto.avatar,
+                roles: {
+                    create: roles.map((role) => ({ role: role as UserRole })),
+                },
+            },
+            include: {
+                roles: { select: { role: true } },
             },
         });
 
-        const { password, ...result } = user;
-        return result;
+        const { password: _, roles: userRoles, ...result } = user;
+        return {
+            ...result,
+            roles: userRoles.map((r) => r.role),
+        };
     }
 
     async findAll(query?: { role?: string; status?: string; page?: number; limit?: number }) {
@@ -40,7 +55,9 @@ export class UsersService {
         const skip = (page - 1) * limit;
 
         const where: any = {};
-        if (query?.role) where.role = query.role;
+        if (query?.role) {
+            where.roles = { some: { role: query.role } };
+        }
         if (query?.status) where.status = query.status;
 
         const [users, total] = await Promise.all([
@@ -55,7 +72,7 @@ export class UsersService {
                     firstName: true,
                     lastName: true,
                     phone: true,
-                    role: true,
+                    roles: { select: { role: true } },
                     status: true,
                     avatar: true,
                     createdAt: true,
@@ -66,7 +83,10 @@ export class UsersService {
         ]);
 
         return {
-            data: users,
+            data: users.map((u) => ({
+                ...u,
+                roles: u.roles.map((r) => r.role),
+            })),
             meta: {
                 total,
                 page,
@@ -85,7 +105,7 @@ export class UsersService {
                 firstName: true,
                 lastName: true,
                 phone: true,
-                role: true,
+                roles: { select: { role: true } },
                 status: true,
                 avatar: true,
                 createdAt: true,
@@ -97,25 +117,45 @@ export class UsersService {
             throw new NotFoundException('User not found');
         }
 
-        return user;
+        return {
+            ...user,
+            roles: user.roles.map((r) => r.role),
+        };
     }
 
     async update(id: string, dto: UpdateUserDto) {
         await this.findOne(id);
 
         const data: any = { ...dto };
+        delete data.roles;
 
         if (dto.password) {
             data.password = await bcrypt.hash(dto.password, 10);
         }
 
+        // If roles are provided, replace all existing roles
+        if (dto.roles && dto.roles.length > 0) {
+            await this.prisma.$transaction([
+                this.prisma.userRoleAssignment.deleteMany({ where: { userId: id } }),
+                this.prisma.userRoleAssignment.createMany({
+                    data: dto.roles.map((role) => ({ userId: id, role })),
+                }),
+            ]);
+        }
+
         const user = await this.prisma.user.update({
             where: { id },
             data,
+            include: {
+                roles: { select: { role: true } },
+            },
         });
 
-        const { password, ...result } = user;
-        return result;
+        const { password, roles: userRoles, ...result } = user;
+        return {
+            ...result,
+            roles: userRoles.map((r) => r.role),
+        };
     }
 
     async remove(id: string) {

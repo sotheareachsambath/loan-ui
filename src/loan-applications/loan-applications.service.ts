@@ -142,7 +142,7 @@ export class LoanApplicationsService {
                 approvalWorkflows: {
                     include: {
                         approver: {
-                            select: { id: true, firstName: true, lastName: true, role: true },
+                            select: { id: true, firstName: true, lastName: true, roles: { select: { role: true } } },
                         },
                     },
                     orderBy: { createdAt: 'asc' },
@@ -204,12 +204,14 @@ export class LoanApplicationsService {
             throw new BadRequestException('Can only assign officer to SUBMITTED applications');
         }
 
-        // Verify the user is a LOAN_OFFICER
+        // Verify the user has LOAN_OFFICER role
         const officer = await this.prisma.user.findUnique({
             where: { id: loanOfficerId },
+            include: { roles: { select: { role: true } } },
         });
 
-        if (!officer || officer.role !== 'LOAN_OFFICER') {
+        const officerRoles = officer?.roles.map((r) => r.role) || [];
+        if (!officer || !officerRoles.includes('LOAN_OFFICER')) {
             throw new BadRequestException('User is not a loan officer');
         }
 
@@ -229,22 +231,25 @@ export class LoanApplicationsService {
         // Verify approver exists and has correct role
         const approver = await this.prisma.user.findUnique({
             where: { id: dto.approverId },
+            include: { roles: { select: { role: true } } },
         });
 
         if (!approver) {
             throw new NotFoundException('Approver not found');
         }
 
-        // Validate approval level matches user role
-        const roleToLevel: Record<string, string> = {
-            LOAN_OFFICER: 'OFFICER',
+        // Validate approval level matches one of the user's roles
+        const levelToRole: Record<string, string> = {
+            OFFICER: 'LOAN_OFFICER',
             MANAGER: 'MANAGER',
             DIRECTOR: 'DIRECTOR',
         };
 
-        if (roleToLevel[approver.role] !== dto.level) {
+        const approverRoles = approver.roles.map((r) => r.role);
+        const requiredRole = levelToRole[dto.level];
+        if (!requiredRole || !approverRoles.includes(requiredRole as any)) {
             throw new ForbiddenException(
-                `User role ${approver.role} cannot approve at ${dto.level} level`,
+                `User with roles [${approverRoles.join(', ')}] cannot approve at ${dto.level} level`,
             );
         }
 
@@ -309,7 +314,7 @@ export class LoanApplicationsService {
             where: { loanApplicationId: id },
             include: {
                 approver: {
-                    select: { id: true, firstName: true, lastName: true, role: true },
+                    select: { id: true, firstName: true, lastName: true, roles: { select: { role: true } } },
                 },
             },
             orderBy: { createdAt: 'asc' },

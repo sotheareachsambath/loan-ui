@@ -33,13 +33,13 @@ model User {
   firstName String
   lastName  String
   phone     String?
-  role      UserRole   @default(CUSTOMER)
   status    UserStatus @default(ACTIVE)
   avatar    String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   // Relations
+  roles                  UserRoleAssignment[]
   loanApplications       LoanApplication[]       @relation("applicant")
   assignedLoans          LoanApplication[]       @relation("loanOfficer")
   approvalActions        ApprovalWorkflow[]
@@ -47,6 +47,18 @@ model User {
   repaymentRecords       Repayment[]             @relation("collectedBy")
 
   @@map("users")
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  role      UserRole
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@map("user_roles")
 }
 
 // ==========================================

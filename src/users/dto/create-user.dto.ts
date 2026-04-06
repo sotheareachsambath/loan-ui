@@ -1,4 +1,5 @@
 import {
+    IsArray,
     IsEmail,
     IsEnum,
     IsNotEmpty,
@@ -8,7 +9,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-enum UserRole {
+export enum UserRole {
     ADMIN = 'ADMIN',
     DIRECTOR = 'DIRECTOR',
     MANAGER = 'MANAGER',
@@ -44,10 +45,16 @@ export class CreateUserDto {
     @IsOptional()
     phone?: string;
 
-    @ApiPropertyOptional({ enum: UserRole, default: 'CUSTOMER' })
-    @IsEnum(UserRole)
+    @ApiPropertyOptional({
+        enum: UserRole,
+        isArray: true,
+        example: ['LOAN_OFFICER', 'MANAGER'],
+        description: 'Array of roles to assign. Defaults to [CUSTOMER] if not provided.',
+    })
+    @IsArray()
+    @IsEnum(UserRole, { each: true })
     @IsOptional()
-    role?: UserRole;
+    roles?: UserRole[];
 
     @ApiPropertyOptional()
     @IsString()

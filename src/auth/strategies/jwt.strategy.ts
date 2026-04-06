@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export interface JwtPayload {
     sub: string;       // user id
     email: string;
-    role: string;
+    roles: string[];
 }
 
 @Injectable()
@@ -27,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                 email: true,
                 firstName: true,
                 lastName: true,
-                role: true,
+                roles: { select: { role: true } },
                 status: true,
                 avatar: true,
             },
@@ -41,6 +41,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             throw new UnauthorizedException('Account is not active');
         }
 
-        return user;
+        return {
+            ...user,
+            roles: user.roles.map((r) => r.role),
+        };
     }
 }

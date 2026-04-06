@@ -24,6 +24,7 @@ export class AuthService {
         // 1. Find user by email
         const user = await this.prisma.user.findUnique({
             where: { email: dto.email },
+            include: { roles: { select: { role: true } } },
         });
 
         if (!user) {
@@ -45,20 +46,24 @@ export class AuthService {
         }
 
         // 4. Generate JWT token
+        const roles = user.roles.map((r) => r.role);
         const payload = {
             sub: user.id,
             email: user.email,
-            role: user.role,
+            roles,
         };
 
         const accessToken = this.jwtService.sign(payload);
 
         // 5. Return token + user info (never return the password)
-        const { password, ...userWithoutPassword } = user;
+        const { password, roles: userRoles, ...userWithoutPassword } = user;
 
         return {
             accessToken,
-            user: userWithoutPassword,
+            user: {
+                ...userWithoutPassword,
+                roles,
+            },
         };
     }
 
@@ -81,24 +86,31 @@ export class AuthService {
             data: {
                 ...dto,
                 password: hashedPassword,
-                role: 'CUSTOMER',
                 status: 'ACTIVE',
+                roles: {
+                    create: [{ role: 'CUSTOMER' }],
+                },
             },
+            include: { roles: { select: { role: true } } },
         });
 
+        const roles = user.roles.map((r) => r.role);
         const payload = {
             sub: user.id,
             email: user.email,
-            role: user.role,
+            roles,
         };
 
         const accessToken = this.jwtService.sign(payload);
 
-        const { password, ...userWithoutPassword } = user;
+        const { password, roles: userRoles, ...userWithoutPassword } = user;
 
         return {
             accessToken,
-            user: userWithoutPassword,
+            user: {
+                ...userWithoutPassword,
+                roles,
+            },
         };
     }
 
@@ -115,7 +127,7 @@ export class AuthService {
                 firstName: true,
                 lastName: true,
                 phone: true,
-                role: true,
+                roles: { select: { role: true } },
                 status: true,
                 avatar: true,
                 createdAt: true,
@@ -127,6 +139,9 @@ export class AuthService {
             throw new UnauthorizedException('User not found');
         }
 
-        return user;
+        return {
+            ...user,
+            roles: user.roles.map((r) => r.role),
+        };
     }
 }

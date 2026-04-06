@@ -30,7 +30,7 @@ export class UsersController {
 
     @Get()
     @ApiOperation({ summary: 'List all users', description: 'Retrieve paginated list of users with optional role and status filters.' })
-    @ApiQuery({ name: 'role', required: false, enum: ['ADMIN', 'DIRECTOR', 'MANAGER', 'LOAN_OFFICER', 'TELLER', 'CUSTOMER'] })
+    @ApiQuery({ name: 'role', required: false, enum: ['ADMIN', 'DIRECTOR', 'MANAGER', 'LOAN_OFFICER', 'TELLER', 'CUSTOMER'], description: 'Filter users who have this role' })
     @ApiQuery({ name: 'status', required: false, enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'] })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'limit', required: false, type: Number })

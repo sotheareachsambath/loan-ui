@@ -24,15 +24,18 @@ async function main() {
             password: hashedPassword,
             firstName: 'Admin',
             lastName: 'User',
-            role: 'ADMIN',
             status: 'ACTIVE',
+            roles: {
+                create: [{ role: 'ADMIN' }],
+            },
         },
+        include: { roles: { select: { role: true } } },
     });
 
     console.log(`🌱 Seeded admin user:`);
     console.log(`   Email: ${admin.email}`);
     console.log(`   Password: password123`);
-    console.log(`   Role: ${admin.role}`);
+    console.log(`   Roles: ${admin.roles.map((r) => r.role).join(', ')}`);
 }
 
 main()
