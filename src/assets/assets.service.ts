@@ -20,7 +20,7 @@ export class AssetsService {
         uploadedById?: string,
     ) {
         const { key, url } = await this.s3.upload(file, folder);
-        console.log('Uploaded file to S3:', { key, url });
+        // console.log('Uploaded file to S3:', { key, url });
         return this.prisma.asset.create({
             data: {
                 fileName: file.originalname,
