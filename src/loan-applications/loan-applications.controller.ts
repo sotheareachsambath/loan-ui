@@ -12,9 +12,7 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { randomUUID } from 'crypto';
+import { memoryStorage } from 'multer';
 import {
     ApiTags,
     ApiOperation,
@@ -30,6 +28,7 @@ import { CreateLoanApplicationDto } from './dto/create-loan-application.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { ApprovalActionDto } from './dto/approval-action.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { S3Service } from '../s3/s3.service';
 
 @ApiBearerAuth()
 @ApiTags('Loan Applications')
@@ -38,6 +37,7 @@ export class LoanApplicationsController {
     constructor(
         private readonly loanApplicationsService: LoanApplicationsService,
         private readonly prisma: PrismaService,
+        private readonly s3: S3Service,
     ) { }
 
     @Post()
@@ -144,7 +144,7 @@ Actions: APPROVED, REJECTED, RETURNED`,
     }
 
     @Post(':id/documents')
-    @ApiOperation({ summary: 'Upload documents', description: 'Upload documents (ID, collateral, income proof). Max 10 files, 10MB each. Accepts: JPEG, PNG, GIF, PDF, DOC, DOCX.' })
+    @ApiOperation({ summary: 'Upload documents to S3', description: 'Upload documents (ID, collateral, income proof). Max 10 files, 10MB each. Accepts: JPEG, PNG, GIF, PDF, DOC, DOCX. Files are stored in AWS S3.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiConsumes('multipart/form-data')
     @ApiBody({
@@ -156,18 +156,12 @@ Actions: APPROVED, REJECTED, RETURNED`,
             },
         },
     })
-    @ApiResponse({ status: 201, description: 'Documents uploaded successfully.' })
+    @ApiResponse({ status: 201, description: 'Documents uploaded to S3 successfully.' })
     @ApiResponse({ status: 400, description: 'No files uploaded or invalid file type.' })
     @ApiResponse({ status: 404, description: 'Loan application not found.' })
     @UseInterceptors(
         FilesInterceptor('files', 10, {
-            storage: diskStorage({
-                destination: './uploads/documents',
-                filename: (req, file, cb) => {
-                    const uniqueName = `${randomUUID()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
-                },
-            }),
+            storage: memoryStorage(),
             limits: { fileSize: 10 * 1024 * 1024 },
             fileFilter: (req, file, cb) => {
                 const allowedMimes = [
@@ -198,26 +192,28 @@ Actions: APPROVED, REJECTED, RETURNED`,
         }
 
         const documents = await Promise.all(
-            files.map((file) =>
-                this.prisma.document.create({
+            files.map(async (file) => {
+                const { key, url } = await this.s3.upload(file, `loan-documents/${id}`);
+
+                return this.prisma.document.create({
                     data: {
                         loanApplicationId: id,
-                        fileName: file.filename,
+                        fileName: key,
                         originalName: file.originalname,
-                        filePath: file.path,
+                        filePath: url,
                         fileSize: file.size,
                         mimeType: file.mimetype,
                         documentType: documentType || 'OTHER',
                     },
-                }),
-            ),
+                });
+            }),
         );
 
         return documents;
     }
 
     @Get(':id/documents')
-    @ApiOperation({ summary: 'List documents', description: 'Get all uploaded documents for a loan application.' })
+    @ApiOperation({ summary: 'List documents', description: 'Get all uploaded documents for a loan application. Returns S3 URLs.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiResponse({ status: 200, description: 'List of documents for the loan application.' })
     async getDocuments(@Param('id') id: string) {
@@ -227,8 +223,30 @@ Actions: APPROVED, REJECTED, RETURNED`,
         });
     }
 
+    @Get(':id/documents/:documentId/signed-url')
+    @ApiOperation({ summary: 'Get signed download URL', description: 'Generate a temporary signed URL (1 hour) to download a document from S3.' })
+    @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiParam({ name: 'documentId', description: 'Document UUID' })
+    @ApiResponse({ status: 200, description: 'Signed URL for document download.' })
+    @ApiResponse({ status: 404, description: 'Document not found.' })
+    async getSignedUrl(
+        @Param('id') id: string,
+        @Param('documentId') documentId: string,
+    ) {
+        const doc = await this.prisma.document.findUnique({
+            where: { id: documentId },
+        });
+
+        if (!doc) {
+            throw new BadRequestException('Document not found');
+        }
+
+        const signedUrl = await this.s3.getSignedUrl(doc.fileName);
+        return { signedUrl, expiresIn: 3600 };
+    }
+
     @Delete(':id/documents/:documentId')
-    @ApiOperation({ summary: 'Delete a document' })
+    @ApiOperation({ summary: 'Delete a document', description: 'Deletes document from S3 and database.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiParam({ name: 'documentId', description: 'Document UUID' })
     @ApiResponse({ status: 200, description: 'Document deleted successfully.' })
@@ -237,7 +255,18 @@ Actions: APPROVED, REJECTED, RETURNED`,
         @Param('id') id: string,
         @Param('documentId') documentId: string,
     ) {
+        const doc = await this.prisma.document.findUnique({
+            where: { id: documentId },
+        });
+
+        if (!doc) {
+            throw new BadRequestException('Document not found');
+        }
+
+        // Delete from S3 and database
+        await this.s3.delete(doc.fileName);
         await this.prisma.document.delete({ where: { id: documentId } });
+
         return { message: 'Document deleted successfully' };
     }
 

@@ -45,6 +45,7 @@ model User {
   approvalActions        ApprovalWorkflow[]
   disbursements          Disbursement[]
   repaymentRecords       Repayment[]             @relation("collectedBy")
+  uploadedAssets         Asset[]                 @relation("uploadedAssets")
 
   @@map("users")
 }
@@ -317,4 +318,26 @@ model Repayment {
   collectedBy     User            @relation("collectedBy", fields: [collectedById], references: [id])
 
   @@map("repayments")
+}
+
+// ==========================================
+// 7. ASSETS (S3 File Management)
+// ==========================================
+
+model Asset {
+  id           String   @id @default(uuid())
+  fileName     String   // original file name
+  key          String   @unique // S3 object key
+  url          String   // S3 public URL
+  mimeType     String
+  fileSize     Int
+  folder       String   @default("general") // organize files: general, avatars, documents, etc.
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  uploadedBy User? @relation("uploadedAssets", fields: [uploadedById], references: [id])
+
+  @@map("assets")
 }
