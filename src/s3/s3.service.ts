@@ -59,7 +59,7 @@ export class S3Service {
             throw new InternalServerErrorException(`Failed to upload file: ${error.message}`);
         }
 
-        const url = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+        const url = `s3://${this.bucket}/${key}`;
 
         return { key, url };
     }
@@ -85,5 +85,15 @@ export class S3Service {
         });
 
         return getSignedUrl(this.s3, command, { expiresIn });
+    }
+
+    normalizeKey(pathOrUrl: string): string {
+        const s3Prefix = `s3://${this.bucket}/`;
+
+        if (pathOrUrl.startsWith(s3Prefix)) {
+            return pathOrUrl.slice(s3Prefix.length);
+        }
+
+        return pathOrUrl;
     }
 }

@@ -7,18 +7,13 @@ import {
     Param,
     Delete,
     Query,
-    UseInterceptors,
-    UploadedFiles,
     BadRequestException,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import {
     ApiTags,
     ApiOperation,
     ApiQuery,
     ApiParam,
-    ApiConsumes,
     ApiBody,
     ApiResponse,
     ApiBearerAuth,
@@ -27,6 +22,7 @@ import { LoanApplicationsService } from './loan-applications.service';
 import { CreateLoanApplicationDto } from './dto/create-loan-application.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { ApprovalActionDto } from './dto/approval-action.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 
@@ -144,90 +140,60 @@ Actions: APPROVED, REJECTED, RETURNED`,
     }
 
     @Post(':id/documents')
-    @ApiOperation({ summary: 'Upload documents to S3', description: 'Upload documents (ID, collateral, income proof). Max 10 files, 10MB each. Accepts: JPEG, PNG, GIF, PDF, DOC, DOCX. Files are stored in AWS S3.' })
+    @ApiOperation({ summary: 'Save document URL', description: 'Store a document reference for a loan application. Upload the file separately first, then pass the resulting URL here.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
-    @ApiConsumes('multipart/form-data')
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                files: { type: 'array', items: { type: 'string', format: 'binary' } },
-                documentType: { type: 'string', enum: ['ID', 'COLLATERAL', 'INCOME_PROOF', 'OTHER'], description: 'Type of document' },
-            },
-        },
-    })
-    @ApiResponse({ status: 201, description: 'Documents uploaded to S3 successfully.' })
-    @ApiResponse({ status: 400, description: 'No files uploaded or invalid file type.' })
+    @ApiBody({ type: CreateDocumentDto })
+    @ApiResponse({ status: 201, description: 'Document reference saved successfully.' })
+    @ApiResponse({ status: 400, description: 'Invalid document payload.' })
     @ApiResponse({ status: 404, description: 'Loan application not found.' })
-    @UseInterceptors(
-        FilesInterceptor('files', 10, {
-            storage: memoryStorage(),
-            limits: { fileSize: 10 * 1024 * 1024 },
-            fileFilter: (req, file, cb) => {
-                const allowedMimes = [
-                    'image/jpeg',
-                    'image/png',
-                    'image/gif',
-                    'application/pdf',
-                    'application/msword',
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                ];
-                if (allowedMimes.includes(file.mimetype)) {
-                    cb(null, true);
-                } else {
-                    cb(new BadRequestException('Invalid file type'), false);
-                }
-            },
-        }),
-    )
-    async uploadDocuments(
+    async createDocument(
         @Param('id') id: string,
-        @UploadedFiles() files: Express.Multer.File[],
-        @Body('documentType') documentType: string,
+        @Body() dto: CreateDocumentDto,
     ) {
         await this.loanApplicationsService.findOne(id);
 
-        if (!files || files.length === 0) {
-            throw new BadRequestException('No files uploaded');
+        if (!dto.filePath) {
+            throw new BadRequestException('filePath is required');
         }
 
-        const documents = await Promise.all(
-            files.map(async (file) => {
-                const { key, url } = await this.s3.upload(file, `loan-documents/${id}`);
-
-                return this.prisma.document.create({
-                    data: {
-                        loanApplicationId: id,
-                        fileName: key,
-                        originalName: file.originalname,
-                        filePath: url,
-                        fileSize: file.size,
-                        mimeType: file.mimetype,
-                        documentType: documentType || 'OTHER',
-                    },
-                });
-            }),
-        );
-
-        return documents;
-    }
-
-    @Get(':id/documents')
-    @ApiOperation({ summary: 'List documents', description: 'Get all uploaded documents for a loan application. Returns S3 URLs.' })
-    @ApiParam({ name: 'id', description: 'Loan Application UUID' })
-    @ApiResponse({ status: 200, description: 'List of documents for the loan application.' })
-    async getDocuments(@Param('id') id: string) {
-        return this.prisma.document.findMany({
-            where: { loanApplicationId: id },
-            orderBy: { createdAt: 'desc' },
+        return this.prisma.document.create({
+            data: {
+                loanApplicationId: id,
+                fileName: dto.fileName || dto.originalName || dto.filePath,
+                originalName: dto.originalName || dto.fileName || dto.filePath,
+                filePath: dto.filePath,
+                fileSize: dto.fileSize ?? 0,
+                mimeType: dto.mimeType || 'application/octet-stream',
+                documentType: dto.documentType || 'OTHER',
+            },
         });
     }
 
+    @Get(':id/documents')
+    @ApiOperation({ summary: 'List documents', description: 'Get all stored document references for a loan application.' })
+    @ApiParam({ name: 'id', description: 'Loan Application UUID' })
+    @ApiResponse({ status: 200, description: 'List of documents for the loan application.' })
+    async getDocuments(@Param('id') id: string) {
+        const documents = await this.prisma.document.findMany({
+            where: { loanApplicationId: id },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        return Promise.all(
+            documents.map(async (doc) => ({
+                ...doc,
+                url: doc.filePath.startsWith('http')
+                    ? doc.filePath
+                    : await this.s3.getSignedUrl(this.s3.normalizeKey(doc.filePath)),
+            })),
+        );
+    }
+
     @Get(':id/documents/:documentId/signed-url')
-    @ApiOperation({ summary: 'Get signed download URL', description: 'Generate a temporary signed URL (1 hour) to download a document from S3.' })
+    @ApiOperation({ summary: 'Get document URL', description: 'Returns the stored document URL for a loan application document.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiParam({ name: 'documentId', description: 'Document UUID' })
-    @ApiResponse({ status: 200, description: 'Signed URL for document download.' })
+    @ApiResponse({ status: 200, description: 'Document URL.' })
     @ApiResponse({ status: 404, description: 'Document not found.' })
     async getSignedUrl(
         @Param('id') id: string,
@@ -241,12 +207,15 @@ Actions: APPROVED, REJECTED, RETURNED`,
             throw new BadRequestException('Document not found');
         }
 
-        const signedUrl = await this.s3.getSignedUrl(doc.fileName);
-        return { signedUrl, expiresIn: 3600 };
+        return {
+            url: doc.filePath.startsWith('http')
+                ? doc.filePath
+                : await this.s3.getSignedUrl(this.s3.normalizeKey(doc.filePath)),
+        };
     }
 
     @Delete(':id/documents/:documentId')
-    @ApiOperation({ summary: 'Delete a document', description: 'Deletes document from S3 and database.' })
+    @ApiOperation({ summary: 'Delete a document', description: 'Deletes the document record from the database.' })
     @ApiParam({ name: 'id', description: 'Loan Application UUID' })
     @ApiParam({ name: 'documentId', description: 'Document UUID' })
     @ApiResponse({ status: 200, description: 'Document deleted successfully.' })
@@ -263,8 +232,6 @@ Actions: APPROVED, REJECTED, RETURNED`,
             throw new BadRequestException('Document not found');
         }
 
-        // Delete from S3 and database
-        await this.s3.delete(doc.fileName);
         await this.prisma.document.delete({ where: { id: documentId } });
 
         return { message: 'Document deleted successfully' };
