@@ -113,6 +113,12 @@ export class LoanApplicationsService {
                     loanOfficer: {
                         select: { id: true, firstName: true, lastName: true },
                     },
+                    disbursements: {
+                        select: { amount: true, status: true },
+                    },
+                    repayments: {
+                        select: { principalPortion: true },
+                    },
                     _count: {
                         select: { documents: true, approvalWorkflows: true },
                     },
@@ -121,8 +127,12 @@ export class LoanApplicationsService {
             this.prisma.loanApplication.count({ where }),
         ]);
 
+        const data = await Promise.all(
+            applications.map((application) => this.applyDerivedClosedStatus(application)),
+        );
+
         return {
-            data: applications,
+            data,
             meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
         };
     }
@@ -157,7 +167,7 @@ export class LoanApplicationsService {
             throw new NotFoundException('Loan application not found');
         }
 
-        return application;
+        return this.applyDerivedClosedStatus(application);
     }
 
     async update(id: string, dto: UpdateLoanApplicationDto) {
@@ -328,5 +338,54 @@ export class LoanApplicationsService {
         }
         await this.prisma.loanApplication.delete({ where: { id } });
         return { message: 'Loan application deleted successfully' };
+    }
+
+    private async applyDerivedClosedStatus<T extends {
+        id: string;
+        status: string;
+        approvedAmount?: any;
+        requestedAmount: any;
+        loanProduct?: { hasFixedTerm?: boolean } | null;
+        disbursements?: Array<{ amount: any; status: string }>;
+        repayments?: Array<{ principalPortion: any }>;
+    }>(application: T): Promise<T> {
+        const isNonFixedTerm = application.loanProduct?.hasFixedTerm === false;
+
+        if (!isNonFixedTerm || application.status !== 'DISBURSED') {
+            return application;
+        }
+
+        const totalDisbursed =
+            application.disbursements?.reduce((sum, disbursement) => {
+                if (disbursement.status !== 'COMPLETED') {
+                    return sum;
+                }
+
+                return sum + Number(disbursement.amount);
+            }, 0) || 0;
+
+        const principalTarget =
+            totalDisbursed || Number(application.approvedAmount || application.requestedAmount);
+        const totalPrincipalRepaid =
+            application.repayments?.reduce(
+                (sum, repayment) => sum + Number(repayment.principalPortion),
+                0,
+            ) || 0;
+
+        if (principalTarget > 0 && totalPrincipalRepaid >= principalTarget - 0.01) {
+            await this.prisma.loanApplication
+                .update({
+                    where: { id: application.id },
+                    data: { status: 'CLOSED' },
+                })
+                .catch(() => undefined);
+
+            return {
+                ...application,
+                status: 'CLOSED',
+            };
+        }
+
+        return application;
     }
 }

@@ -21,6 +21,7 @@ export class RepaymentsService {
             where: { id: dto.loanApplicationId },
             include: {
                 loanProduct: true,
+                disbursements: true,
                 repaymentSchedules: {
                     where: { status: { in: ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'] } },
                     orderBy: { installmentNumber: 'asc' },
@@ -40,7 +41,10 @@ export class RepaymentsService {
         // - REGULAR payments = interest only (borrower pays interest periodically)
         // - EARLY_REPAYMENT / PREPAYMENT = principal repayment (loan closes when full principal is returned)
         if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
-            const loanAmount = Number(loan.approvedAmount || loan.requestedAmount);
+            const totalDisbursed = loan.disbursements
+                .filter((d) => d.status === 'COMPLETED')
+                .reduce((sum, d) => sum + Number(d.amount), 0);
+            const loanAmount = totalDisbursed || Number(loan.approvedAmount || loan.requestedAmount);
             const monthlyRate = Number(loan.interestRate) / 100; // interestRate is monthly %
 
             // Get previous repayments to calculate outstanding principal
