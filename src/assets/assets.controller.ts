@@ -111,19 +111,18 @@ export class AssetsController {
     }
 
     @Get()
-    @ApiOperation({ summary: 'List all assets', description: 'Paginated list with optional folder and uploader filters.' })
+    @ApiOperation({ summary: 'List my assets', description: 'Paginated list of assets uploaded by the authenticated user, with optional folder filter.' })
     @ApiQuery({ name: 'folder', required: false, example: 'documents' })
-    @ApiQuery({ name: 'uploadedById', required: false })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'limit', required: false, type: Number })
     @ApiResponse({ status: 200, description: 'Paginated list of assets.' })
     findAll(
         @Query('folder') folder?: string,
-        @Query('uploadedById') uploadedById?: string,
         @Query('page') page?: number,
         @Query('limit') limit?: number,
+        @CurrentUser('id') currentUserId?: string,
     ) {
-        return this.assetsService.findAll({ folder, uploadedById, page, limit });
+        return this.assetsService.findAll(currentUserId!, { folder, page, limit });
     }
 
     @Get(':id')
@@ -131,8 +130,8 @@ export class AssetsController {
     @ApiParam({ name: 'id', description: 'Asset UUID' })
     @ApiResponse({ status: 200, description: 'Asset details.' })
     @ApiResponse({ status: 404, description: 'Asset not found.' })
-    findOne(@Param('id') id: string) {
-        return this.assetsService.findOne(id);
+    findOne(@Param('id') id: string, @CurrentUser('id') currentUserId?: string) {
+        return this.assetsService.findOne(id, currentUserId!);
     }
 
     @Get(':id/signed-url')
@@ -140,8 +139,8 @@ export class AssetsController {
     @ApiParam({ name: 'id', description: 'Asset UUID' })
     @ApiResponse({ status: 200, description: 'Signed URL with expiry.' })
     @ApiResponse({ status: 404, description: 'Asset not found.' })
-    getSignedUrl(@Param('id') id: string) {
-        return this.assetsService.getSignedUrl(id);
+    getSignedUrl(@Param('id') id: string, @CurrentUser('id') currentUserId?: string) {
+        return this.assetsService.getSignedUrl(id, currentUserId!);
     }
 
     @Patch(':id')
@@ -149,8 +148,12 @@ export class AssetsController {
     @ApiParam({ name: 'id', description: 'Asset UUID' })
     @ApiResponse({ status: 200, description: 'Asset updated.' })
     @ApiResponse({ status: 404, description: 'Asset not found.' })
-    update(@Param('id') id: string, @Body() dto: UpdateAssetDto) {
-        return this.assetsService.update(id, dto);
+    update(
+        @Param('id') id: string,
+        @Body() dto: UpdateAssetDto,
+        @CurrentUser('id') currentUserId?: string,
+    ) {
+        return this.assetsService.update(id, dto, currentUserId!);
     }
 
     @Put(':id/replace')
@@ -171,11 +174,12 @@ export class AssetsController {
     async replace(
         @Param('id') id: string,
         @UploadedFile() file: Express.Multer.File,
+        @CurrentUser('id') currentUserId?: string,
     ) {
         if (!file) {
             throw new BadRequestException('No file provided');
         }
-        return this.assetsService.replace(id, file);
+        return this.assetsService.replace(id, file, currentUserId!);
     }
 
     @Delete(':id')
@@ -183,7 +187,7 @@ export class AssetsController {
     @ApiParam({ name: 'id', description: 'Asset UUID' })
     @ApiResponse({ status: 200, description: 'Asset deleted.' })
     @ApiResponse({ status: 404, description: 'Asset not found.' })
-    remove(@Param('id') id: string) {
-        return this.assetsService.remove(id);
+    remove(@Param('id') id: string, @CurrentUser('id') currentUserId?: string) {
+        return this.assetsService.remove(id, currentUserId!);
     }
 }

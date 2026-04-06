@@ -2,6 +2,7 @@ import {
     Injectable,
     NotFoundException,
     BadRequestException,
+    UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
@@ -50,19 +51,20 @@ export class AssetsService {
         );
     }
 
-    async findAll(query?: {
+    async findAll(currentUserId: string, query?: {
         folder?: string;
-        uploadedById?: string;
         page?: number;
         limit?: number;
     }) {
+        this.ensureAuthenticatedUser(currentUserId);
+
         const page = query?.page || 1;
         const limit = query?.limit || 20;
         const skip = (page - 1) * limit;
 
         const where: any = {};
+        where.uploadedById = currentUserId;
         if (query?.folder) where.folder = query.folder;
-        if (query?.uploadedById) where.uploadedById = query.uploadedById;
 
         const [assets, total] = await Promise.all([
             this.prisma.asset.findMany({
@@ -85,9 +87,11 @@ export class AssetsService {
         };
     }
 
-    async findOne(id: string) {
-        const asset = await this.prisma.asset.findUnique({
-            where: { id },
+    async findOne(id: string, currentUserId: string) {
+        this.ensureAuthenticatedUser(currentUserId);
+
+        const asset = await this.prisma.asset.findFirst({
+            where: { id, uploadedById: currentUserId },
             include: {
                 uploadedBy: {
                     select: { id: true, firstName: true, lastName: true },
@@ -102,14 +106,14 @@ export class AssetsService {
         return asset;
     }
 
-    async getSignedUrl(id: string) {
-        const asset = await this.findOne(id);
+    async getSignedUrl(id: string, currentUserId: string) {
+        const asset = await this.findOne(id, currentUserId);
         const signedUrl = await this.s3.getSignedUrl(asset.key);
         return { ...asset, signedUrl, expiresIn: 3600 };
     }
 
-    async update(id: string, dto: UpdateAssetDto) {
-        const asset = await this.findOne(id);
+    async update(id: string, dto: UpdateAssetDto, currentUserId: string) {
+        await this.findOne(id, currentUserId);
 
         return this.prisma.asset.update({
             where: { id },
@@ -120,8 +124,8 @@ export class AssetsService {
         });
     }
 
-    async replace(id: string, file: Express.Multer.File) {
-        const asset = await this.findOne(id);
+    async replace(id: string, file: Express.Multer.File, currentUserId: string) {
+        const asset = await this.findOne(id, currentUserId);
 
         // Delete old file from S3
         await this.s3.delete(asset.key);
@@ -141,8 +145,8 @@ export class AssetsService {
         });
     }
 
-    async remove(id: string) {
-        const asset = await this.findOne(id);
+    async remove(id: string, currentUserId: string) {
+        const asset = await this.findOne(id, currentUserId);
 
         // Delete from S3
         await this.s3.delete(asset.key);
@@ -170,5 +174,11 @@ export class AssetsService {
         }
 
         return normalizedUploadedById;
+    }
+
+    private ensureAuthenticatedUser(currentUserId?: string) {
+        if (!currentUserId) {
+            throw new UnauthorizedException('Invalid or expired token');
+        }
     }
 }
