@@ -36,30 +36,60 @@ export class RepaymentsService {
             throw new BadRequestException('Loan must be DISBURSED to accept payments');
         }
 
-        // Non-fixed-term loans: record repayment directly without schedule allocation
+        // Non-fixed-term loans:
+        // - REGULAR payments = interest only (borrower pays interest periodically)
+        // - EARLY_REPAYMENT / PREPAYMENT = principal repayment (loan closes when full principal is returned)
         if (!(loan.loanProduct as any).hasFixedTerm || !loan.termMonths) {
             const loanAmount = Number(loan.approvedAmount || loan.requestedAmount);
+            const monthlyRate = Number(loan.interestRate) / 100; // interestRate is monthly %
 
-            // Get total already paid
-            const previousRepayments = await this.prisma.repayment.aggregate({
+            // Get previous repayments to calculate outstanding principal
+            const previousRepayments = await this.prisma.repayment.findMany({
                 where: { loanApplicationId: dto.loanApplicationId },
-                _sum: { amount: true },
             });
-            const totalPreviouslyPaid = Number(previousRepayments._sum.amount || 0);
-            const outstandingBalance = Math.round((loanAmount - totalPreviouslyPaid) * 100) / 100;
 
-            if (outstandingBalance <= 0) {
+            const totalPrincipalPaid = previousRepayments.reduce(
+                (sum, r) => sum + Number(r.principalPortion), 0,
+            );
+            const outstandingPrincipal = Math.round((loanAmount - totalPrincipalPaid) * 100) / 100;
+
+            if (outstandingPrincipal <= 0) {
                 throw new BadRequestException('This loan is already fully paid');
             }
 
-            if (dto.amount > outstandingBalance) {
-                throw new BadRequestException(
-                    `Payment amount (${dto.amount}) exceeds outstanding balance (${outstandingBalance})`,
-                );
+            const repaymentType = dto.repaymentType || 'REGULAR';
+            let principalPortion = 0;
+            let interestPortion = 0;
+
+            if (repaymentType === 'REGULAR') {
+                // REGULAR = interest-only payment
+                const interestDue = Math.round(outstandingPrincipal * monthlyRate * 100) / 100;
+
+                if (dto.amount < interestDue) {
+                    throw new BadRequestException(
+                        `Interest payment must be at least ${interestDue} (${outstandingPrincipal} × ${loan.interestRate}%)`,
+                    );
+                }
+                if (dto.amount > interestDue) {
+                    throw new BadRequestException(
+                        `Interest-only payment should be exactly ${interestDue}. To repay principal, use repaymentType EARLY_REPAYMENT or PREPAYMENT`,
+                    );
+                }
+
+                interestPortion = dto.amount;
+            } else {
+                // EARLY_REPAYMENT / PREPAYMENT = paying back principal
+                if (dto.amount > outstandingPrincipal) {
+                    throw new BadRequestException(
+                        `Payment amount (${dto.amount}) exceeds outstanding principal (${outstandingPrincipal})`,
+                    );
+                }
+
+                principalPortion = dto.amount;
             }
 
-            const newTotalPaid = totalPreviouslyPaid + dto.amount;
-            const isFullyPaid = Math.round((loanAmount - newTotalPaid) * 100) / 100 <= 0;
+            const newOutstandingPrincipal = Math.round((outstandingPrincipal - principalPortion) * 100) / 100;
+            const isFullyPaid = newOutstandingPrincipal <= 0;
 
             const result = await this.prisma.$transaction(async (tx) => {
                 const repayment = await tx.repayment.create({
@@ -67,17 +97,17 @@ export class RepaymentsService {
                         loanApplicationId: dto.loanApplicationId,
                         collectedById: dto.collectedById,
                         amount: dto.amount,
-                        principalPortion: dto.amount,
-                        interestPortion: 0,
+                        principalPortion,
+                        interestPortion,
                         penaltyPortion: 0,
-                        repaymentType: (dto.repaymentType || 'REGULAR') as any,
+                        repaymentType: repaymentType as any,
                         paymentMethod: dto.paymentMethod,
                         referenceNumber: dto.referenceNumber,
                         notes: dto.notes,
                     },
                 });
 
-                // Close the loan if fully paid
+                // Close the loan when full principal is repaid
                 if (isFullyPaid) {
                     await tx.loanApplication.update({
                         where: { id: dto.loanApplicationId },
@@ -91,15 +121,15 @@ export class RepaymentsService {
             return {
                 repayment: result,
                 allocation: {
-                    principalPaid: dto.amount,
-                    interestPaid: 0,
+                    principalPaid: principalPortion,
+                    interestPaid: interestPortion,
                     penaltyPaid: 0,
                     totalPaid: dto.amount,
                     schedulesAffected: 0,
                     hasFixedTerm: false,
                     loanAmount,
-                    totalRepaid: Math.round(newTotalPaid * 100) / 100,
-                    outstandingBalance: Math.round((loanAmount - newTotalPaid) * 100) / 100,
+                    outstandingPrincipal: newOutstandingPrincipal,
+                    totalPrincipalRepaid: Math.round((totalPrincipalPaid + principalPortion) * 100) / 100,
                     loanClosed: isFullyPaid,
                 },
             };
